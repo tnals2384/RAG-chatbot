@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG 챗봇</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        width: 100%;
+        max-width: 800px;
+        height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        text-align: center;
+      }
+
+      .header h1 {
+        font-size: 24px;
+        margin-bottom: 5px;
+      }
+
+      .header p {
+        opacity: 0.9;
+        font-size: 14px;
+      }
+
+      .status {
+        padding: 10px 20px;
+        background: #f0f0f0;
+        font-size: 12px;
+        color: #666;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4caf50;
+      }
+
+      .status-dot.disconnected {
+        background: #f44336;
+      }
+
+      .chat-container {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+      }
+
+      .message {
+        max-width: 70%;
+        padding: 12px 16px;
+        border-radius: 18px;
+        word-wrap: break-word;
+        animation: fadeIn 0.3s;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .message.user {
+        align-self: flex-end;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .message.bot {
+        align-self: flex-start;
+        background: #f0f0f0;
+        color: #333;
+        line-height: 1.6;
+      }
+
+      .message.bot strong {
+        font-weight: 600;
+        color: #333;
+      }
+
+      .message.bot ul,
+      .message.bot ol {
+        margin: 8px 0;
+        padding-left: 24px;
+      }
+
+      .message.bot li {
+        margin: 4px 0;
+      }
+
+      .message.bot p {
+        margin: 8px 0;
+      }
+
+      .message.bot p:first-child {
+        margin-top: 0;
+      }
+
+      .message.bot p:last-child {
+        margin-bottom: 0;
+      }
+
+      .input-container {
+        padding: 20px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        gap: 10px;
+      }
+
+      .input-container input {
+        flex: 1;
+        padding: 12px 16px;
+        border: 2px solid #e0e0e0;
+        border-radius: 25px;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.3s;
+      }
+
+      .input-container input:focus {
+        border-color: #667eea;
+      }
+
+      .input-container button {
+        padding: 12px 24px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .input-container button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .input-container button:active {
+        transform: translateY(0);
+      }
+
+      .input-container button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .loading {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s ease-in-out infinite;
+      }
+
+      .loading.bot-loading {
+        border: 3px solid rgba(0, 0, 0, 0.1);
+        border-top-color: #667eea;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .typing-indicator {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+
+      .typing-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #999;
+        animation: typing 1.4s infinite;
+      }
+
+      .typing-dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+
+      .typing-dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+
+      @keyframes typing {
+        0%,
+        60%,
+        100% {
+          transform: translateY(0);
+          opacity: 0.7;
+        }
+        30% {
+          transform: translateY(-10px);
+          opacity: 1;
+        }
+      }
+
+      .welcome-message {
+        text-align: center;
+        color: #999;
+        padding: 40px 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📚 PDF RAG 챗봇</h1>
+        <p>PDF 문서를 기반으로 질문에 답변합니다</p>
+      </div>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">연결 확인 중...</span>
+      </div>
+      <div class="chat-container" id="chatContainer">
+        <div class="welcome-message">
+          👋 안녕하세요! 궁금한 HR 정보에 대해 질문해보세요.
+        </div>
+      </div>
+      <div class="input-container">
+        <input
+          type="text"
+          id="userInput"
+          placeholder="질문을 입력하세요..."
+          onkeypress="handleKeyPress(event)"
+        />
+        <button id="sendButton" onclick="sendMessage()">전송</button>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE_URL = "http://localhost:8000";
+      // 세션 ID 생성 (페이지 로드 시 한 번만)
+      const SESSION_ID =
+        "session_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
+
+      // 상태 확인
+      async function checkStatus() {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/health`);
+          const data = await response.json();
+
+          const statusDot = document.getElementById("statusDot");
+          const statusText = document.getElementById("statusText");
+
+          if (data.chatbot_initialized) {
+            statusDot.classList.remove("disconnected");
+            statusText.textContent = "챗봇 준비 완료";
+          } else {
+            statusDot.classList.add("disconnected");
+            statusText.textContent = "챗봇 초기화 필요";
+          }
+        } catch (error) {
+          const statusDot = document.getElementById("statusDot");
+          const statusText = document.getElementById("statusText");
+          statusDot.classList.add("disconnected");
+          statusText.textContent = "서버 연결 실패";
+        }
+      }
+
+      // 메시지 전송
+      async function sendMessage() {
+        const input = document.getElementById("userInput");
+        const button = document.getElementById("sendButton");
+        const question = input.value.trim();
+
+        if (!question) return;
+
+        // 사용자 메시지 표시
+        addMessage(question, "user");
+        input.value = "";
+        button.disabled = true;
+        button.textContent = "전송 중...";
+
+        // 환영 메시지 제거
+        const welcomeMessage = document.querySelector(".welcome-message");
+        if (welcomeMessage) {
+          welcomeMessage.remove();
+        }
+
+        // 봇 메시지 말풍선에 로딩 표시
+        const loadingMessageId = addLoadingMessage();
+
+        try {
+          // /api/chat 엔드포인트 사용 (대화 기록 유지)
+          const response = await fetch(`${API_BASE_URL}/api/chat`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              question: question,
+              session_id: SESSION_ID, // 같은 세션 ID로 대화 기록 유지
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || "오류가 발생했습니다.");
+          }
+
+          const data = await response.json();
+          // 로딩 메시지를 실제 답변으로 교체
+          updateMessage(loadingMessageId, data.answer, "bot");
+        } catch (error) {
+          // 로딩 메시지를 오류 메시지로 교체
+          updateMessage(loadingMessageId, `오류: ${error.message}`, "bot");
+        } finally {
+          button.disabled = false;
+          button.textContent = "전송";
+          input.focus();
+        }
+      }
+
+      // 마크다운을 간단한 HTML로 변환
+      function formatMessage(text) {
+        if (!text) return "";
+
+        let html = text;
+
+        // 먼저 **텍스트** → <strong>텍스트</strong> 처리
+        html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+        // 줄을 나눔
+        const lines = html.split("\n");
+        const formattedLines = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          let line = lines[i].trim();
+
+          if (!line) {
+            // 빈 줄은 문단 구분
+            formattedLines.push('<div style="margin: 8px 0;"></div>');
+            continue;
+          }
+
+          // **숫자) 제목:** 형식 처리
+          if (/^\*\*(\d+\)\s+[^:]+:)\*\*/.test(line)) {
+            line = line.replace(
+              /^\*\*(\d+\)\s+[^:]+:)\*\*/,
+              "<strong>$1</strong>"
+            );
+            formattedLines.push(
+              `<div style="margin: 12px 0 6px 0; font-weight: 600;">${line}</div>`
+            );
+          }
+          // 숫자) 항목 처리
+          else if (/^(\d+\))\s+/.test(line)) {
+            line = line.replace(/^(\d+\))\s+(.+)$/, "<strong>$1</strong> $2");
+            formattedLines.push(
+              `<div style="margin: 6px 0 4px 16px;">${line}</div>`
+            );
+          }
+          // - 리스트 처리
+          else if (/^-\s+/.test(line)) {
+            line = line.replace(/^-\s+(.+)$/, "• $1");
+            formattedLines.push(
+              `<div style="margin: 4px 0 4px 16px;">${line}</div>`
+            );
+          }
+          // 일반 텍스트
+          else {
+            formattedLines.push(`<div style="margin: 4px 0;">${line}</div>`);
+          }
+        }
+
+        return formattedLines.join("");
+      }
+
+      // 메시지 추가
+      function addMessage(text, type) {
+        const chatContainer = document.getElementById("chatContainer");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message ${type}`;
+
+        if (type === "bot") {
+          // 봇 메시지는 마크다운 포맷팅 적용
+          messageDiv.innerHTML = formatMessage(text);
+        } else {
+          // 사용자 메시지는 그대로
+          messageDiv.textContent = text;
+        }
+
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        return messageDiv;
+      }
+
+      // 로딩 메시지 추가 (봇 말풍선 안에)
+      function addLoadingMessage() {
+        const chatContainer = document.getElementById("chatContainer");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "message bot";
+        messageDiv.id = "loading-" + Date.now();
+
+        const typingIndicator = document.createElement("div");
+        typingIndicator.className = "typing-indicator";
+        typingIndicator.innerHTML = `
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        `;
+
+        messageDiv.appendChild(typingIndicator);
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        return messageDiv.id;
+      }
+
+      // 메시지 업데이트 (로딩 → 실제 답변)
+      function updateMessage(messageId, text, type) {
+        const messageDiv = document.getElementById(messageId);
+        if (messageDiv) {
+          messageDiv.innerHTML = "";
+          if (type === "bot") {
+            // 봇 메시지는 마크다운 포맷팅 적용
+            messageDiv.innerHTML = formatMessage(text);
+          } else {
+            // 사용자 메시지는 그대로
+            messageDiv.textContent = text;
+          }
+        } else {
+          // 메시지를 찾을 수 없으면 새로 추가
+          addMessage(text, type);
+        }
+        const chatContainer = document.getElementById("chatContainer");
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+
+      // Enter 키 처리
+      function handleKeyPress(event) {
+        if (event.key === "Enter") {
+          sendMessage();
+        }
+      }
+
+      // 초기화
+      checkStatus();
+      setInterval(checkStatus, 10000); // 10초마다 상태 확인
+    </script>
+  </body>
+</html>
