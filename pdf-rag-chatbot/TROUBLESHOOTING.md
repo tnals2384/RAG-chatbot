@@ -156,10 +156,104 @@ INFO:     127.0.0.1:xxxxx - "GET /wrong/path HTTP/1.1" 404 Not Found
 - [ ] Content-Type 헤더가 설정되어 있나요? (`application/json`)
 - [ ] 요청 본문이 올바른 형식인가요? (JSON)
 
+## Windows에서 tokenizers 설치 오류 해결
+
+### 문제 증상
+
+`pip install -r requirements.txt` 실행 시 다음과 같은 오류가 발생합니다:
+
+```
+error: Cargo, the Rust package manager, is not installed or is not on PATH.
+This package requires Rust and Cargo to compile extensions.
+```
+
+### 해결 방법
+
+#### 방법 1: 사전 컴파일된 wheel 파일 사용 (권장)
+
+1. **pip, setuptools, wheel 업그레이드:**
+```powershell
+python -m pip install --upgrade pip setuptools wheel
+```
+
+2. **다시 설치 시도:**
+```powershell
+pip install -r requirements.txt
+```
+
+업그레이드된 pip는 사전 컴파일된 wheel 파일을 자동으로 찾아 설치합니다.
+
+#### 방법 2: Rust 설치 (방법 1이 실패할 경우)
+
+1. **Rust 공식 사이트에서 설치:**
+   - https://rustup.rs/ 접속
+   - `rustup-init.exe` 다운로드 및 실행
+   - 설치 중 "Add to PATH" 옵션 선택
+
+2. **PowerShell 재시작:**
+   - 설치 후 PowerShell을 완전히 종료하고 다시 시작
+
+3. **설치 확인:**
+```powershell
+rustc --version
+cargo --version
+```
+
+4. **다시 설치 시도:**
+```powershell
+pip install -r requirements.txt
+```
+
+#### 방법 3: Microsoft Visual C++ Build Tools 설치
+
+Rust 설치 후에도 문제가 발생하면:
+
+1. **Visual Studio Build Tools 다운로드:**
+   - https://visualstudio.microsoft.com/downloads/
+   - "Build Tools for Visual Studio" 다운로드
+
+2. **설치 시 선택:**
+   - "C++ build tools" 워크로드 선택
+   - Windows 10/11 SDK 선택
+
+3. **재부팅 후 다시 시도**
+
+#### 방법 4: 개별 패키지 설치 (임시 해결책)
+
+문제가 계속되면 패키지를 개별적으로 설치:
+
+```powershell
+# 먼저 tokenizers를 사전 컴파일된 버전으로 설치
+pip install tokenizers --only-binary :all:
+
+# 나머지 패키지 설치
+pip install -r requirements.txt
+```
+
+### 추가 팁
+
+- **가상 환경 사용 권장:**
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+- **Python 버전 확인:**
+  - Python 3.8 이상 필요
+  - `python --version`으로 확인
+
+- **캐시 정리 후 재시도:**
+```powershell
+pip cache purge
+pip install -r requirements.txt
+```
+
 ## 추가 도움
 
 여전히 문제가 해결되지 않으면:
 1. 서버 로그를 확인하세요
 2. 브라우저 개발자 도구의 Network 탭을 확인하세요
 3. `http://localhost:8000/api/docs`에서 Swagger UI로 직접 테스트해보세요
+4. Python 버전과 pip 버전을 확인하세요 (`python --version`, `pip --version`)
 

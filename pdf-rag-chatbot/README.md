@@ -75,6 +75,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+**⚠️ Windows 사용자 주의사항:**
+
+`tokenizers` 패키지 설치 시 Rust 관련 오류가 발생할 수 있습니다. 해결 방법:
+
+1. **먼저 pip 업그레이드:**
+```powershell
+python -m pip install --upgrade pip setuptools wheel
+```
+
+2. **다시 설치 시도:**
+```powershell
+pip install -r requirements.txt
+```
+
+여전히 문제가 발생하면 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)의 "Windows에서 tokenizers 설치 오류 해결" 섹션을 참고하세요.
+
 ## 💻 사용 방법
 
 ### 1. PDF 파일 준비

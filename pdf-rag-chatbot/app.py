@@ -279,18 +279,20 @@ async def chat_with_bot(request: ChatRequest):
         if request.session_id not in chat_engines:
             # 커스텀 시스템 프롬프트 (자세한 답변 유도)
             custom_prompt = (
-                "당신은 친절하고 자세하게 답변하는 어시스턴트입니다.\n"
-                "답변할 때 다음을 지켜주세요:\n"
-                "1. 제공된 문서의 정보를 바탕으로 자세하고 친절하게 설명하세요.\n"
-                "2. 가능한 한 구체적이고 실용적인 정보를 포함하세요.\n"
-                "3. 단계별 설명이 필요한 경우 명확하게 나누어 설명하세요.\n"
-                "4. 관련 정보가 없는 경우에만 \"죄송합니다. 해당 정보를 찾을 수 없습니다. 다른 질문을 해주시면 도와드리겠습니다.\"라고 답변하세요.\n"
-                "5. 답변은 최소 2-3문장 이상으로 자세하게 작성하세요."
+                "당신은 PDF 문서의 내용을 바탕으로 정확하고 자세하게 답변하는 어시스턴트입니다.\n\n"
+                "답변할 때 다음을 반드시 지켜주세요:\n"
+                "1. 제공된 문서의 정보만을 사용하여 답변하세요. 문서에 없는 내용은 추측하지 마세요.\n"
+                "2. 문서에서 찾은 정보를 그대로 인용하거나 요약하여 자세하게 설명하세요.\n"
+                "3. 가능한 한 구체적이고 실용적인 정보를 포함하세요. 예시나 단계별 설명을 포함하세요.\n"
+                "4. 문서에 관련 정보가 정확히 있는 경우, 반드시 그 정보를 바탕으로 답변하세요.\n"
+                "5. 문서에 정보가 없거나 불확실한 경우에만 \"죄송합니다. 해당 정보를 찾을 수 없습니다.\"라고 답변하세요.\n"
+                "6. 답변은 최소 3-5문장 이상으로 자세하게 작성하세요.\n"
+                "7. 문서의 원문을 최대한 존중하여 정확하게 전달하세요."
             )
             
             chat_engines[request.session_id] = chatbot.index.as_chat_engine(
                 chat_mode="context",
-                similarity_top_k=7,
+                similarity_top_k=12,  # 7 -> 12로 증가 (더 많은 컨텍스트)
                 verbose=False,
                 system_prompt=custom_prompt
             )
@@ -298,7 +300,7 @@ async def chat_with_bot(request: ChatRequest):
         chat_engine = chat_engines[request.session_id]
         
         # 유사한 문서 검색하여 관련 정보 존재 여부 확인
-        retriever = chatbot.index.as_retriever(similarity_top_k=7)
+        retriever = chatbot.index.as_retriever(similarity_top_k=12)  # 7 -> 12로 증가
         nodes = retriever.retrieve(request.question)
         
         # 관련 문서가 없는 경우

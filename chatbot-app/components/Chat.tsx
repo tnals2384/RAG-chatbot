@@ -15,6 +15,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
   const [sessionId] = useState(
     () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   );
@@ -106,6 +107,74 @@ export default function Chat() {
     }
   };
 
+  const handleCopy = async (content: string, messageIndex: number) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageIndex);
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 2000);
+    } catch (error) {
+      console.error("복사 실패:", error);
+      alert("복사에 실패했습니다.");
+    }
+  };
+
+  const handleResend = async (content: string, messageIndex: number) => {
+    if (loading) return;
+
+    // 해당 메시지 이후의 모든 메시지 제거
+    setMessages((prev) => prev.slice(0, messageIndex + 1));
+
+    // 로딩 메시지 추가
+    const loadingMessage: Message = {
+      role: "bot",
+      content: "",
+      isLoading: true,
+    };
+    setMessages((prev) => [...prev, loadingMessage]);
+    setLoading(true);
+
+    try {
+      const response = await sendChatMessage(content, sessionId);
+      // 로딩 메시지를 실제 답변으로 교체
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const loadingIndex = newMessages.findIndex(
+          (msg) => msg.isLoading === true
+        );
+        if (loadingIndex !== -1) {
+          newMessages[loadingIndex] = {
+            role: "bot",
+            content: response.answer,
+            isLoading: false,
+          };
+        }
+        return newMessages;
+      });
+    } catch (error) {
+      // 로딩 메시지를 에러 메시지로 교체
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        const loadingIndex = newMessages.findIndex(
+          (msg) => msg.isLoading === true
+        );
+        if (loadingIndex !== -1) {
+          newMessages[loadingIndex] = {
+            role: "bot",
+            content: `오류: ${
+              error instanceof Error ? error.message : "알 수 없는 오류"
+            }`,
+            isLoading: false,
+          };
+        }
+        return newMessages;
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-screen flex-col bg-white dark:bg-gray-900">
       {/* 헤더 */}
@@ -139,12 +208,63 @@ export default function Chat() {
           {messages.map((msg, idx) => (
             <div
               key={idx}
-              className={`flex ${
+              className={`group flex items-start gap-2 ${
                 msg.role === "user" ? "justify-end" : "justify-start"
               }`}
             >
+              {/* 액션 버튼들 - 말풍선 왼쪽 (사용자 메시지만) */}
+              {!msg.isLoading && msg.role === "user" && (
+                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 order-1">
+                  <button
+                    onClick={() => handleResend(msg.content, idx)}
+                    disabled={loading}
+                    className="rounded-md bg-white/90 backdrop-blur-sm p-1.5 text-pink-600 shadow-sm transition-all hover:bg-white hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700/90 dark:text-pink-400 dark:hover:bg-gray-700"
+                    title="다시 보내기"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleCopy(msg.content, idx)}
+                    className={`rounded-md p-1.5 shadow-sm transition-all backdrop-blur-sm ${
+                      copiedMessageId === idx
+                        ? "bg-green-100 text-green-600 dark:bg-green-900/90 dark:text-green-300"
+                        : "bg-white/90 text-pink-600 hover:bg-white hover:shadow-md dark:bg-gray-700/90 dark:text-pink-400 dark:hover:bg-gray-700"
+                    }`}
+                    title={copiedMessageId === idx ? "복사됨!" : "복사"}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184m1.5-2.828A48.208 48.208 0 0 0 8.25 2.5H5.625a2.25 2.25 0 0 0-1.907 1.638M5.625 6h4.125m-4.125 0v.375m0 11.25v-9m0 9h-4.125m4.125 0h4.125"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-3 ${
+                className={`max-w-[80%] rounded-lg px-4 py-3 order-2 ${
                   msg.role === "user"
                     ? "bg-gradient-to-r from-pink-200 to-pink-300 text-gray-800 shadow-md"
                     : "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-gray-100 border border-pink-100 dark:border-pink-800"
@@ -168,6 +288,36 @@ export default function Chat() {
                   </p>
                 )}
               </div>
+              
+              {/* 봇 말풍선 오른쪽 복사 버튼 */}
+              {!msg.isLoading && msg.role === "bot" && (
+                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 order-3">
+                  <button
+                    onClick={() => handleCopy(msg.content, idx)}
+                    className={`rounded-md p-1.5 shadow-sm transition-all backdrop-blur-sm ${
+                      copiedMessageId === idx
+                        ? "bg-green-100 text-green-600 dark:bg-green-900/90 dark:text-green-300"
+                        : "bg-white/90 text-pink-600 hover:bg-white hover:shadow-md dark:bg-gray-700/90 dark:text-pink-400 dark:hover:bg-gray-700"
+                    }`}
+                    title={copiedMessageId === idx ? "복사됨!" : "복사"}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                      stroke="currentColor"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184m1.5-2.828A48.208 48.208 0 0 0 8.25 2.5H5.625a2.25 2.25 0 0 0-1.907 1.638M5.625 6h4.125m-4.125 0v.375m0 11.25v-9m0 9h-4.125m4.125 0h4.125"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           <div ref={messagesEndRef} />

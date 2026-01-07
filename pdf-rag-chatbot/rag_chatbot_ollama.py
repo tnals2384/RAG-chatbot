@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
 from llama_index.core.storage.storage_context import StorageContext
+from llama_index.core.node_parser import SentenceSplitter
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.ollama import Ollama
@@ -64,8 +65,16 @@ class RAGChatbot:
         Settings.embed_model = self.embed_model
         
         # 청크 크기 설정 (한국어 텍스트에 맞게 조정)
-        Settings.chunk_size = 1024
-        Settings.chunk_overlap = 200
+        # 512로 줄여서 더 세밀하게 분할하고, 문장 단위로 분할하도록 개선
+        Settings.chunk_size = 512
+        Settings.chunk_overlap = 50
+        
+        # 문장 단위 분할기 사용 (한국어 문장 경계를 더 잘 인식)
+        Settings.node_parser = SentenceSplitter(
+            chunk_size=512,
+            chunk_overlap=50,
+            separator="\n\n"  # 문단 단위로 먼저 분할
+        )
         
         # ChromaDB 클라이언트 초기화
         self.persist_dir = persist_dir
@@ -206,13 +215,13 @@ class RAGChatbot:
         
         print("문서 추가가 완료되었습니다!")
     
-    def query(self, question: str, similarity_top_k: int = 5):
+    def query(self, question: str, similarity_top_k: int = 10):
         """
         질문에 대한 답변 생성
         
         Args:
             question: 사용자 질문
-            similarity_top_k: 유사한 문서를 몇 개까지 검색할지
+            similarity_top_k: 유사한 문서를 몇 개까지 검색할지 (기본값 10으로 증가)
         
         Returns:
             답변 문자열
@@ -220,9 +229,10 @@ class RAGChatbot:
         if self.index is None:
             raise ValueError("인덱스가 초기화되지 않았습니다.")
         
+        # 더 많은 컨텍스트를 제공하기 위해 similarity_top_k 증가
         query_engine = self.index.as_query_engine(
             similarity_top_k=similarity_top_k,
-            response_mode="compact"
+            response_mode="tree_summarize"  # compact -> tree_summarize로 변경 (더 나은 요약)
         )
         
         print("질문을 처리하는 중입니다...")
@@ -261,7 +271,7 @@ class RAGChatbot:
         
         chat_engine = self.index.as_chat_engine(
             chat_mode="context",
-            similarity_top_k=7,  # 더 많은 컨텍스트 제공
+            similarity_top_k=12,  # 7 -> 12로 증가 (더 많은 컨텍스트)
             verbose=True,
             system_prompt=custom_prompt
         )
@@ -269,7 +279,7 @@ class RAGChatbot:
         print("질문을 처리하는 중입니다...")
         try:
             # 유사한 문서 검색하여 관련 정보 존재 여부 확인
-            retriever = self.index.as_retriever(similarity_top_k=5)
+            retriever = self.index.as_retriever(similarity_top_k=12)  # 5 -> 12로 증가
             nodes = retriever.retrieve(question)
             
             # 관련 문서가 없는 경우
