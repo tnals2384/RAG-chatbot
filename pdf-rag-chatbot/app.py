@@ -174,19 +174,6 @@ async def health_check():
     )
 
 
-@app.get("/health", response_model=StatusResponse)
-async def health_check_legacy():
-    """
-    헬스 체크 엔드포인트 (레거시 호환용)
-    - 기존 코드와의 호환성을 위해 유지
-    """
-    return StatusResponse(
-        status="healthy",
-        chatbot_initialized=chatbot is not None,
-        message="서버가 정상적으로 실행 중입니다."
-    )
-
-
 @app.post("/api/init", response_model=InitResponse)
 async def initialize_chatbot(request: InitRequest):
     """
@@ -322,30 +309,6 @@ async def reset_chat_session(session_id: str):
         message=f"세션 '{session_id}'의 대화 기록이 초기화되었습니다."
     )
 
-
-@app.post("/api/chat/reset", response_model=ChatResetResponse)
-async def reset_chat_session_post(request: ChatResetRequest):
-    """
-    특정 세션의 대화 기록 초기화 (POST 메서드)
-    - DELETE 메서드를 지원하지 않는 클라이언트를 위한 대안
-    """
-    if chatbot is None:
-        raise HTTPException(
-            status_code=503,
-            detail=ErrorResponse(
-                success=False,
-                message="챗봇이 초기화되지 않았습니다.",
-                error="ChatbotNotInitialized",
-                detail="/api/init 엔드포인트를 먼저 호출하세요."
-            ).dict()
-        )
-    
-    chatbot.reset_session(request.session_id)
-    return ChatResetResponse(
-        success=True,
-        session_id=request.session_id,
-        message=f"세션 '{request.session_id}'의 대화 기록이 초기화되었습니다."
-    )
 
 
 if __name__ == "__main__":

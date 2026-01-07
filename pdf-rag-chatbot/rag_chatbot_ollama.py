@@ -264,7 +264,7 @@ class RAGChatbot:
         chat_engine = self.chat_engines[session_id]
         
         # chat_engine.chat()이 내부적으로 retriever를 사용하여 관련 문서를 자동으로 검색하고
-        # 답변을 생성합니다. 별도로 nodes를 검색할 필요가 없습니다.
+        # 답변을 생성
         try:
             response = chat_engine.chat(question)
             return str(response)
