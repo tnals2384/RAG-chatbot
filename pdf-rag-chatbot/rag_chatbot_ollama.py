@@ -83,6 +83,22 @@ class RAGChatbot:
         # 벡터 스토어 및 인덱스 초기화
         self.index = None
         self._initialize_index(pdf_directory)
+        
+        # 세션별 chat_engine 저장 (대화 기록 유지용)
+        self.chat_engines: dict = {}
+        
+        # 커스텀 시스템 프롬프트 (자세한 답변 유도)
+        self.custom_prompt = (
+            "당신은 PDF 문서의 내용을 바탕으로 정확하고 자세하게 답변하는 어시스턴트입니다.\n\n"
+            "답변할 때 다음을 반드시 지켜주세요:\n"
+            "1. 제공된 문서의 정보만을 사용하여 답변하세요. 문서에 없는 내용은 추측하지 마세요.\n"
+            "2. 문서에서 찾은 정보를 그대로 인용하거나 요약하여 자세하게 설명하세요.\n"
+            "3. 가능한 한 구체적이고 실용적인 정보를 포함하세요. 예시나 단계별 설명을 포함하세요.\n"
+            "4. 문서에 관련 정보가 정확히 있는 경우, 반드시 그 정보를 바탕으로 답변하세요.\n"
+            "5. 문서에 정보가 없거나 불확실한 경우에만 \"죄송합니다. 해당 정보를 찾을 수 없습니다.\"라고 답변하세요.\n"
+            "6. 답변은 최소 3-5문장 이상으로 자세하게 작성하세요.\n"
+            "7. 문서의 원문을 최대한 존중하여 정확하게 전달하세요."
+        )
     
     def _initialize_index(self, pdf_directory: str):
         """
@@ -118,7 +134,7 @@ class RAGChatbot:
         
         if not pdf_path.exists():
             print(f"경고: {pdf_directory} 디렉토리가 존재하지 않습니다.")
-            print("빈 인덱스를 생성합니다. PDF 파일을 추가하려면 ingest_pdfs() 메서드를 사용하세요.")
+            print("빈 인덱스를 생성합니다.")
             chroma_collection = self.chroma_client.get_or_create_collection(
                 name=collection_name
             )
@@ -189,32 +205,6 @@ class RAGChatbot:
         
         print(" 벡터 인덱스 생성 및 DB 저장이 완료되었습니다!")
     
-    def ingest_pdfs(self, pdf_directory: str):
-        """추가 PDF 파일을 인덱스에 추가"""
-        pdf_path = Path(pdf_directory)
-        
-        if not pdf_path.exists():
-            raise ValueError(f"{pdf_directory} 디렉토리가 존재하지 않습니다.")
-        
-        pdf_files = list(pdf_path.glob("*.pdf"))
-        if not pdf_files:
-            raise ValueError(f"{pdf_directory} 디렉토리에 PDF 파일이 없습니다.")
-        
-        print(f"{len(pdf_files)}개의 PDF 파일을 발견했습니다.")
-        
-        documents = SimpleDirectoryReader(
-            input_dir=pdf_directory,
-            required_exts=[".pdf"]
-        ).load_data()
-        
-        print(f"{len(documents)}개의 문서 청크를 로드했습니다.")
-        
-        print("문서를 인덱스에 추가하는 중입니다...")
-        for doc in documents:
-            self.index.insert(doc)
-        
-        print("문서 추가가 완료되었습니다!")
-    
     def query(self, question: str, similarity_top_k: int = 10):
         """
         질문에 대한 답변 생성
@@ -245,13 +235,15 @@ class RAGChatbot:
                 error_msg += "\n Ollama 서버가 실행 중인지 확인하세요."
             raise Exception(error_msg) from e
     
-    def chat(self, question: str, chat_history: list = None):
+    def chat(self, question: str, session_id: str = "default", similarity_top_k: int = 12):
         """
-        대화형 챗봇 인터페이스
+        대화형 채팅 (대화 기록 지원)
+        - 같은 session_id를 사용하면 대화 기록이 유지됩니다.
         
         Args:
             question: 사용자 질문
-            chat_history: 이전 대화 기록 (선택사항)
+            session_id: 세션 ID (같은 세션은 대화 기록 공유)
+            similarity_top_k: 유사한 문서를 몇 개까지 검색할지 (기본값 12)
         
         Returns:
             답변 문자열
@@ -259,96 +251,35 @@ class RAGChatbot:
         if self.index is None:
             raise ValueError("인덱스가 초기화되지 않았습니다.")
         
-        # 커스텀 시스템 프롬프트 (자세한 답변 유도)
-        custom_prompt = (
-            "당신은 친절하고 자세하게 답변하는 어시스턴트입니다.\n"
-            "답변할 때 다음을 지켜주세요:\n"
-            "1. 제공된 문서의 정보를 바탕으로 자세하고 친절하게 설명하세요.\n"
-            "2. 가능한 한 구체적이고 실용적인 정보를 포함하세요.\n"
-            "3. 단계별 설명이 필요한 경우 명확하게 나누어 설명하세요.\n"
-            "4. 관련 정보가 없는 경우에만 \"죄송합니다. 해당 정보를 찾을 수 없습니다. 다른 질문을 해주시면 도와드리겠습니다.\"라고 답변하세요.\n"
-        )
+        # 세션별로 chat_engine 재사용 (대화 기록 유지)
+        # 새로운 세션이거나 similarity_top_k가 변경된 경우 새로 생성
+        if session_id not in self.chat_engines:
+            self.chat_engines[session_id] = self.index.as_chat_engine(
+                chat_mode="context",
+                similarity_top_k=similarity_top_k,
+                verbose=False,
+                system_prompt=self.custom_prompt
+            )
         
-        chat_engine = self.index.as_chat_engine(
-            chat_mode="context",
-            similarity_top_k=12,  # 7 -> 12로 증가 (더 많은 컨텍스트)
-            verbose=True,
-            system_prompt=custom_prompt
-        )
+        chat_engine = self.chat_engines[session_id]
         
-        print("질문을 처리하는 중입니다...")
+        # chat_engine.chat()이 내부적으로 retriever를 사용하여 관련 문서를 자동으로 검색하고
+        # 답변을 생성합니다. 별도로 nodes를 검색할 필요가 없습니다.
         try:
-            # 유사한 문서 검색하여 관련 정보 존재 여부 확인
-            retriever = self.index.as_retriever(similarity_top_k=12)  # 5 -> 12로 증가
-            nodes = retriever.retrieve(question)
-            
-            # 관련 문서가 없는 경우
-            if not nodes or len(nodes) == 0:
-                return "죄송합니다. 해당 정보를 찾을 수 없습니다. 다른 질문을 해주시면 도와드리겠습니다."
-            
-            
-            # 정상적인 답변 생성
             response = chat_engine.chat(question)
-            response_text = str(response)
-            
-            # 응답이 너무 짧거나 의미 없는 경우 재확인
-            if len(response_text.strip()) < 10:
-                return "죄송합니다. 해당 정보를 찾을 수 없습니다. 다른 질문을 해주시면 도와드리겠습니다."
-            
-            return response_text
+            return str(response)
         except Exception as e:
             error_msg = f"채팅 처리 중 오류 발생: {e}"
             if "connection" in str(e).lower() or "refused" in str(e).lower():
                 error_msg += "\n Ollama 서버가 실행 중인지 확인하세요."
             raise Exception(error_msg) from e
-
-
-def main():
-    """메인 실행 함수"""
-    print("=" * 50)
-    print("PDF 기반 RAG 챗봇 (Ollama 사용)")
-    print("=" * 50)
-    print("\n  사전 준비:")
-    print("   1. Ollama 설치: https://ollama.ai")
-    print("   2. Ollama 서버 실행 (자동으로 시작됨)")
-    print("   3. 모델 다운로드: ollama pull qwen2.5:1.5b")
-    print("=" * 50)
     
-    # 사용할 모델 선택 (환경 변수에서 가져오거나 기본값 사용)
-    # 빠른 응답을 위한 작은 모델: qwen2.5:1.5b (약 1.5B 파라미터, 매우 빠름)
-    model_name = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
-    
-    try:
-        chatbot = RAGChatbot(pdf_directory="pdfs", model_name=model_name)
+    def reset_session(self, session_id: str = "default"):
+        """
+        특정 세션의 대화 기록 초기화
         
-        print("\n챗봇이 준비되었습니다! 질문을 입력하세요.")
-        print("종료하려면 'quit', 'exit', 또는 'q'를 입력하세요.\n")
-        
-        while True:
-            question = input("질문: ").strip()
-            
-            if question.lower() in ['quit', 'exit', 'q', '종료']:
-                print("챗봇을 종료합니다.")
-                break
-            
-            if not question:
-                continue
-            
-            try:
-                answer = chatbot.query(question)
-                print(f"\n답변: {answer}\n")
-            except Exception as e:
-                print(f"오류 발생: {e}\n")
-                if "connection" in str(e).lower() or "refused" in str(e).lower():
-                    print(" Ollama 서버가 실행 중인지 확인하세요: ollama serve")
-    except Exception as e:
-        print(f"\n 초기화 실패: {e}")
-        print("\n 해결 방법:")
-        print("   1. Ollama가 설치되어 있는지 확인: https://ollama.ai")
-        print("   2. Ollama 서버가 실행 중인지 확인")
-        print("   3. 모델이 다운로드되어 있는지 확인: ollama list")
-
-
-if __name__ == "__main__":
-    main()
-
+        Args:
+            session_id: 초기화할 세션 ID
+        """
+        if session_id in self.chat_engines:
+            del self.chat_engines[session_id]

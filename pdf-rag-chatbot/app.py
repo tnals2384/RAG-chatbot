@@ -39,8 +39,7 @@ app.add_middleware(
 # 전역 챗봇 인스턴스 (서버 시작 시 한 번만 초기화)
 chatbot: Optional[RAGChatbot] = None
 
-# 세션별 채팅 엔진 저장 (대화 기록 유지용)
-chat_engines: dict = {}
+# 세션 관리는 RAGChatbot 클래스 내부에서 처리
 
 
 # ==================== 공통 응답 모델 ====================
@@ -116,7 +115,7 @@ class StatusResponse(BaseModel):
     message: str = "PDF RAG 챗봇 API"
 
 
-@app.on_event("startup")
+@app.on_event("startup") #서버가 실행될 때 딱 한 번 실행
 async def startup_event():
     """서버 시작 시 챗봇 자동 초기화"""
     global chatbot
@@ -275,46 +274,11 @@ async def chat_with_bot(request: ChatRequest):
         )
     
     try:
-        # 세션별로 chat_engine 재사용 (대화 기록 유지)
-        if request.session_id not in chat_engines:
-            # 커스텀 시스템 프롬프트 (자세한 답변 유도)
-            custom_prompt = (
-                "당신은 PDF 문서의 내용을 바탕으로 정확하고 자세하게 답변하는 어시스턴트입니다.\n\n"
-                "답변할 때 다음을 반드시 지켜주세요:\n"
-                "1. 제공된 문서의 정보만을 사용하여 답변하세요. 문서에 없는 내용은 추측하지 마세요.\n"
-                "2. 문서에서 찾은 정보를 그대로 인용하거나 요약하여 자세하게 설명하세요.\n"
-                "3. 가능한 한 구체적이고 실용적인 정보를 포함하세요. 예시나 단계별 설명을 포함하세요.\n"
-                "4. 문서에 관련 정보가 정확히 있는 경우, 반드시 그 정보를 바탕으로 답변하세요.\n"
-                "5. 문서에 정보가 없거나 불확실한 경우에만 \"죄송합니다. 해당 정보를 찾을 수 없습니다.\"라고 답변하세요.\n"
-                "6. 답변은 최소 3-5문장 이상으로 자세하게 작성하세요.\n"
-                "7. 문서의 원문을 최대한 존중하여 정확하게 전달하세요."
-            )
-            
-            chat_engines[request.session_id] = chatbot.index.as_chat_engine(
-                chat_mode="context",
-                similarity_top_k=12,  # 7 -> 12로 증가 (더 많은 컨텍스트)
-                verbose=False,
-                system_prompt=custom_prompt
-            )
-        
-        chat_engine = chat_engines[request.session_id]
-        
-        # 유사한 문서 검색하여 관련 정보 존재 여부 확인
-        retriever = chatbot.index.as_retriever(similarity_top_k=12)  # 7 -> 12로 증가
-        nodes = retriever.retrieve(request.question)
-        
-        # 관련 문서가 없는 경우
-        if not nodes or len(nodes) == 0:
-            return ChatResponse(
-                success=True,
-                answer="죄송합니다. 해당 정보를 찾을 수 없습니다. 다른 질문을 해주시면 도와드리겠습니다.",
-                session_id=request.session_id,
-                message="관련 문서를 찾을 수 없습니다."
-            )
-        
-        # 정상적인 답변 생성 (대화 기록 유지)
-        response = chat_engine.chat(request.question)
-        response_text = str(response)
+        # RAGChatbot 클래스의 chat() 메서드가 세션 관리를 처리합니다
+        response_text = chatbot.chat(
+            question=request.question,
+            session_id=request.session_id
+        )
         
         return ChatResponse(
             success=True,
@@ -340,17 +304,22 @@ async def reset_chat_session(session_id: str):
     특정 세션의 대화 기록 초기화
     - DELETE 메서드를 사용하여 RESTful하게 구현
     """
-    if session_id in chat_engines:
-        del chat_engines[session_id]
-        return ChatResetResponse(
-            success=True,
-            session_id=session_id,
-            message=f"세션 '{session_id}'의 대화 기록이 초기화되었습니다."
+    if chatbot is None:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorResponse(
+                success=False,
+                message="챗봇이 초기화되지 않았습니다.",
+                error="ChatbotNotInitialized",
+                detail="/api/init 엔드포인트를 먼저 호출하세요."
+            ).dict()
         )
+    
+    chatbot.reset_session(session_id)
     return ChatResetResponse(
         success=True,
         session_id=session_id,
-        message=f"세션 '{session_id}'가 존재하지 않습니다."
+        message=f"세션 '{session_id}'의 대화 기록이 초기화되었습니다."
     )
 
 
@@ -360,18 +329,22 @@ async def reset_chat_session_post(request: ChatResetRequest):
     특정 세션의 대화 기록 초기화 (POST 메서드)
     - DELETE 메서드를 지원하지 않는 클라이언트를 위한 대안
     """
-    session_id = request.session_id
-    if session_id in chat_engines:
-        del chat_engines[session_id]
-        return ChatResetResponse(
-            success=True,
-            session_id=session_id,
-            message=f"세션 '{session_id}'의 대화 기록이 초기화되었습니다."
+    if chatbot is None:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorResponse(
+                success=False,
+                message="챗봇이 초기화되지 않았습니다.",
+                error="ChatbotNotInitialized",
+                detail="/api/init 엔드포인트를 먼저 호출하세요."
+            ).dict()
         )
+    
+    chatbot.reset_session(request.session_id)
     return ChatResetResponse(
         success=True,
-        session_id=session_id,
-        message=f"세션 '{session_id}'가 존재하지 않습니다."
+        session_id=request.session_id,
+        message=f"세션 '{request.session_id}'의 대화 기록이 초기화되었습니다."
     )
 
 
