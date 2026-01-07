@@ -1,25 +1,23 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { sendChatMessage, resetChatSession } from "@/lib/api";
+import { useChat } from "@/hooks/useChat";
+import { copyToClipboard } from "@/utils/chatUtils";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-interface Message {
-  role: "user" | "bot";
-  content: string;
-  isLoading?: boolean;
-}
-
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
-  const [sessionId] = useState(
-    () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const {
+    messages,
+    loading,
+    sendMessage,
+    resendMessage,
+    resetSession,
+  } = useChat();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,71 +29,17 @@ export default function Chat() {
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
-
     const userMessage = input.trim();
     setInput("");
-    const newUserMessage: Message = { role: "user", content: userMessage };
-    setMessages((prev) => [...prev, newUserMessage]);
-
-    // 로딩 메시지 추가
-    const loadingMessage: Message = {
-      role: "bot",
-      content: "",
-      isLoading: true,
-    };
-    setMessages((prev) => [...prev, loadingMessage]);
-    setLoading(true);
-
-    try {
-      const response = await sendChatMessage(userMessage, sessionId);
-      // 로딩 메시지를 실제 답변으로 교체
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        const loadingIndex = newMessages.findIndex(
-          (msg) => msg.isLoading === true
-        );
-        if (loadingIndex !== -1) {
-          newMessages[loadingIndex] = {
-            role: "bot",
-            content: response.answer,
-            isLoading: false,
-          };
-        }
-        return newMessages;
-      });
-    } catch (error) {
-      // 로딩 메시지를 에러 메시지로 교체
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        const loadingIndex = newMessages.findIndex(
-          (msg) => msg.isLoading === true
-        );
-        if (loadingIndex !== -1) {
-          newMessages[loadingIndex] = {
-            role: "bot",
-            content: `오류: ${
-              error instanceof Error ? error.message : "알 수 없는 오류"
-            }`,
-            isLoading: false,
-          };
-        }
-        return newMessages;
-      });
-    } finally {
-      setLoading(false);
-    }
+    await sendMessage(userMessage);
   };
 
   const handleReset = async () => {
     try {
-      await resetChatSession(sessionId);
-      setMessages([]);
+      await resetSession();
     } catch (error) {
-      console.error("세션 초기화 실패:", error);
       alert(
-        `세션 초기화 실패: ${
-          error instanceof Error ? error.message : "알 수 없는 오류"
-        }`
+        error instanceof Error ? error.message : "세션 초기화에 실패했습니다."
       );
     }
   };
@@ -109,70 +53,18 @@ export default function Chat() {
 
   const handleCopy = async (content: string, messageIndex: number) => {
     try {
-      await navigator.clipboard.writeText(content);
+      await copyToClipboard(content);
       setCopiedMessageId(messageIndex);
       setTimeout(() => {
         setCopiedMessageId(null);
       }, 2000);
     } catch (error) {
-      console.error("복사 실패:", error);
-      alert("복사에 실패했습니다.");
+      alert(error instanceof Error ? error.message : "복사에 실패했습니다.");
     }
   };
 
   const handleResend = async (content: string, messageIndex: number) => {
-    if (loading) return;
-
-    // 해당 메시지 이후의 모든 메시지 제거
-    setMessages((prev) => prev.slice(0, messageIndex + 1));
-
-    // 로딩 메시지 추가
-    const loadingMessage: Message = {
-      role: "bot",
-      content: "",
-      isLoading: true,
-    };
-    setMessages((prev) => [...prev, loadingMessage]);
-    setLoading(true);
-
-    try {
-      const response = await sendChatMessage(content, sessionId);
-      // 로딩 메시지를 실제 답변으로 교체
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        const loadingIndex = newMessages.findIndex(
-          (msg) => msg.isLoading === true
-        );
-        if (loadingIndex !== -1) {
-          newMessages[loadingIndex] = {
-            role: "bot",
-            content: response.answer,
-            isLoading: false,
-          };
-        }
-        return newMessages;
-      });
-    } catch (error) {
-      // 로딩 메시지를 에러 메시지로 교체
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        const loadingIndex = newMessages.findIndex(
-          (msg) => msg.isLoading === true
-        );
-        if (loadingIndex !== -1) {
-          newMessages[loadingIndex] = {
-            role: "bot",
-            content: `오류: ${
-              error instanceof Error ? error.message : "알 수 없는 오류"
-            }`,
-            isLoading: false,
-          };
-        }
-        return newMessages;
-      });
-    } finally {
-      setLoading(false);
-    }
+    await resendMessage(content, messageIndex);
   };
 
   return (
