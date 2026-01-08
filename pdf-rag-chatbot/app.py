@@ -445,7 +445,7 @@ async def create_user(request: UserCreateRequest):
     """
     try:
         # 데이터베이스 연결 확인
-        if db.pool is None:
+        if db.engine is None:
             raise HTTPException(
                 status_code=503,
                 detail=ErrorResponse(
@@ -650,8 +650,8 @@ async def create_chat(request: ChatCreateRequest):
         print("=" * 60)
         
         # 데이터베이스 연결 확인
-        if db.pool is None:
-            print("❌ 데이터베이스 풀이 None입니다!")
+        if db.engine is None:
+            print("❌ 데이터베이스 엔진이 None입니다!")
             raise HTTPException(
                 status_code=503,
                 detail=ErrorResponse(
